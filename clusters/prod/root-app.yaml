@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform-prod
+  source:
+    repoURL: https://github.com/hermes-93/k8s-platform.git
+    targetRevision: HEAD
+    path: clusters/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    # prod: no auto-sync — manual approval required
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
