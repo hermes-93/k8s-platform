@@ -1,0 +1,40 @@
+## Dev overrides for frontend
+replicaCount: 1
+
+image:
+  repository: ghcr.io/hermes-93/frontend
+  tag: dev
+
+ingress:
+  enabled: true
+  hosts:
+    - host: frontend.dev.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: frontend-dev-tls
+      hosts:
+        - frontend.dev.example.com
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+env:
+  - name: ENVIRONMENT
+    value: dev
+  - name: LOG_LEVEL
+    value: debug
+  - name: API_URL
+    value: http://backend.backend.svc.cluster.local
