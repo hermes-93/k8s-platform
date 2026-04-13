@@ -1,0 +1,12 @@
+apiVersion: v2
+name: webapp
+description: Generic Helm chart for stateless web workloads
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - webapp
+  - deployment
+  - kubernetes
+maintainers:
+  - name: platform-team
