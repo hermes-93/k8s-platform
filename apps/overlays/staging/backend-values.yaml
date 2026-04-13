@@ -1,0 +1,49 @@
+## Staging overrides for backend
+replicaCount: 2
+
+image:
+  repository: ghcr.io/hermes-93/backend
+  tag: staging
+
+ingress:
+  enabled: true
+  hosts:
+    - host: api.staging.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: backend-staging-tls
+      hosts:
+        - api.staging.example.com
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kube-prometheus-stack
+
+env:
+  - name: ENVIRONMENT
+    value: staging
+  - name: LOG_LEVEL
+    value: info
+  - name: DB_HOST
+    value: postgres.postgres.svc.cluster.local
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: backend-secrets
+        key: db-password
