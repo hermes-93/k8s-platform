@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base/frontend.yaml
+  - ../../base/backend.yaml
+
+patches:
+  - target:
+      kind: Application
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/project
+        value: platform-prod
+      - op: add
+        path: /spec/source/helm/valueFiles/-
+        value: ../../apps/overlays/prod/frontend-values.yaml
+  - target:
+      kind: Application
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/project
+        value: platform-prod
+      - op: add
+        path: /spec/source/helm/valueFiles/-
+        value: ../../apps/overlays/prod/backend-values.yaml
