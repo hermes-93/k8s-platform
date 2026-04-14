@@ -1,0 +1,41 @@
+---
+# Require containers to run as non-root user
+# Implements: PSS Restricted, CIS Kubernetes 5.2.6
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-run-as-non-root
+  annotations:
+    policies.kyverno.io/title: Require Run As Non-Root
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Containers must not run as root. Either set runAsNonRoot=true or
+      set runAsUser to a UID >= 1000. Running as root increases the blast
+      radius of a container escape vulnerability.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "production", "staging"]
+      validate:
+        message: >-
+          Containers must run as non-root. Set securityContext.runAsNonRoot=true
+          or securityContext.runAsUser >= 1000.
+        anyPattern:
+          - spec:
+              securityContext:
+                runAsNonRoot: "true"
+          - spec:
+              containers:
+                - securityContext:
+                    runAsNonRoot: "true"
+          - spec:
+              securityContext:
+                runAsUser: ">= 1000"
