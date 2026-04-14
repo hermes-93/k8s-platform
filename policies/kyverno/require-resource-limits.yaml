@@ -1,0 +1,55 @@
+---
+# Require CPU and memory limits on all containers
+# Implements: CIS Kubernetes 5.2.4, NSA K8s Hardening Guide
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Containers without resource limits can consume unlimited node resources,
+      causing noisy-neighbour problems and potential node crashes. This policy
+      requires both CPU and memory limits on every container.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-limits
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "production", "staging"]
+      validate:
+        message: >-
+          CPU and memory limits are required. Set resources.limits.cpu and
+          resources.limits.memory on every container.
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    cpu: "?*"
+                    memory: "?*"
+
+    - name: require-requests
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "production", "staging"]
+      validate:
+        message: >-
+          CPU and memory requests are required. Set resources.requests.cpu and
+          resources.requests.memory on every container.
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
