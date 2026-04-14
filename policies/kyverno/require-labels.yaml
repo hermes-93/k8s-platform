@@ -1,0 +1,61 @@
+---
+# Require standard labels on all workloads for observability and governance
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-app-labels
+  annotations:
+    policies.kyverno.io/title: Require Application Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Deployment,StatefulSet,DaemonSet
+    policies.kyverno.io/description: >-
+      Requiring standard labels on workloads ensures consistent observability,
+      cost allocation, and incident response. Required labels follow the
+      Kubernetes recommended label schema.
+spec:
+  validationFailureAction: Audit   # Audit mode: warn but don't block
+  background: true
+  rules:
+    - name: check-for-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+              namespaces: ["default", "production", "staging"]
+      validate:
+        message: >-
+          Required labels are missing. Add: app.kubernetes.io/name,
+          app.kubernetes.io/version, app.kubernetes.io/component.
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"
+              app.kubernetes.io/version: "?*"
+              app.kubernetes.io/component: "?*"
+
+---
+# Auto-add team label if missing (mutation policy)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-labels
+  annotations:
+    policies.kyverno.io/title: Add Default Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/subject: Pod
+spec:
+  rules:
+    - name: add-managed-by
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              +(app.kubernetes.io/managed-by): kyverno
