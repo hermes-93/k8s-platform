@@ -1,0 +1,173 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write   # for SARIF upload
+
+jobs:
+
+  # ── Helm lint + template render ───────────────────────────────────────────
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.16.0"
+
+      - name: Lint webapp chart
+        run: |
+          helm lint charts/webapp/ --strict
+          helm lint charts/webapp/ --values apps/overlays/dev/frontend-values.yaml --strict || true
+          helm lint charts/webapp/ --values apps/overlays/prod/frontend-values.yaml --strict || true
+
+      - name: Template render (dev)
+        run: |
+          helm template frontend charts/webapp/ \
+            --values apps/overlays/dev/frontend-values.yaml \
+            --namespace default \
+            --debug \
+            > /dev/null
+
+      - name: Template render (prod)
+        run: |
+          helm template frontend charts/webapp/ \
+            --values apps/overlays/prod/frontend-values.yaml \
+            --namespace default \
+            --debug \
+            > /dev/null
+
+  # ── Kustomize build ──────────────────────────────────────────────────────
+  kustomize-build:
+    name: Kustomize Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Kustomize
+        run: |
+          curl -sfLo kustomize.tar.gz \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz"
+          tar -xzf kustomize.tar.gz
+          sudo install -m 0755 kustomize /usr/local/bin/kustomize
+          kustomize version
+
+      - name: Build dev overlay
+        run: kustomize build clusters/dev/ > /tmp/dev-manifests.yaml
+
+      - name: Build staging overlay
+        run: kustomize build clusters/staging/ > /tmp/staging-manifests.yaml
+
+      - name: Build prod overlay
+        run: kustomize build clusters/prod/ > /tmp/prod-manifests.yaml
+
+      - name: Upload rendered manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-manifests
+          path: /tmp/*-manifests.yaml
+          retention-days: 7
+
+  # ── Kubeconform — validate manifests against K8s schemas ─────────────────
+  kubeconform:
+    name: Kubeconform
+    runs-on: ubuntu-latest
+    needs: kustomize-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download rendered manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: rendered-manifests
+          path: /tmp/
+
+      - name: Install kubeconform
+        run: |
+          curl -sfLo kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz"
+          tar -xzf kubeconform.tar.gz
+          sudo install -m 0755 kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: Validate dev manifests
+        run: |
+          kubeconform \
+            -kubernetes-version 1.29.0 \
+            -summary \
+            -strict \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -ignore-missing-schemas \
+            /tmp/dev-manifests.yaml
+
+      - name: Validate prod manifests
+        run: |
+          kubeconform \
+            -kubernetes-version 1.29.0 \
+            -summary \
+            -strict \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -ignore-missing-schemas \
+            /tmp/prod-manifests.yaml
+
+  # ── Checkov — security / misconfiguration scan ───────────────────────────
+  checkov:
+    name: Checkov Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Checkov
+        run: pip install checkov --quiet
+
+      - name: Scan Helm chart
+        run: |
+          checkov -d charts/ \
+            --framework helm \
+            --output sarif \
+            --output-file-path . \
+            --soft-fail \
+            || true
+          mv results_helm.sarif checkov-helm.sarif 2>/dev/null || touch checkov-helm.sarif
+
+      - name: Scan Kubernetes manifests
+        run: |
+          checkov -d apps/ clusters/ infrastructure/ \
+            --framework kubernetes \
+            --output sarif \
+            --output-file-path . \
+            --soft-fail \
+            || true
+          mv results_kubernetes.sarif checkov-k8s.sarif 2>/dev/null || touch checkov-k8s.sarif
+
+      - name: Upload Checkov SARIF (Helm)
+        if: always() && hashFiles('checkov-helm.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-helm.sarif
+          category: checkov-helm
+        continue-on-error: true
+
+      - name: Upload Checkov SARIF (K8s)
+        if: always() && hashFiles('checkov-k8s.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-k8s.sarif
+          category: checkov-k8s
+        continue-on-error: true
